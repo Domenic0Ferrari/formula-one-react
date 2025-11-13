@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
+import Link from 'next/link';
 
 export default function Register() {
 	const [showPassword, setShowPassword] = useState(false);
@@ -256,9 +257,9 @@ export default function Register() {
 				<div className="mt-8 text-center">
 					<p className="text-sm text-zinc-600 dark:text-zinc-400">
 						Hai già un account?{" "}
-						<a href="/" className="text-red-600 hover:text-red-500 dark:text-red-400 dark:hover:text-red-300 font-medium">
+						<Link href="/" className="text-red-600 hover:text-red-500 dark:text-red-400 dark:hover:text-red-300 font-medium">
 							Accedi
-						</a>
+						</Link>
 					</p>
 				</div>
 			</main>
