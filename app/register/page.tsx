@@ -3,10 +3,14 @@
 import { useState, useEffect } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import Link from 'next/link';
+import axios from 'axios';
+import { useRouter } from 'next/navigation';
 
 export default function Register() {
+	const router = useRouter();
 	const [showPassword, setShowPassword] = useState(false);
 	const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+	const [isLoading, setIsLoading] = useState(false);
 	const [fullName, setFullName] = useState('');
 	const [email, setEmail] = useState('');
 	const [password, setPassword] = useState('');
@@ -15,6 +19,7 @@ export default function Register() {
 	const [emailError, setEmailError] = useState('');
 	const [passwordError, setPasswordError] = useState('');
 	const [confirmPasswordError, setConfirmPasswordError] = useState('');
+	const [registrationError, setRegistrationError] = useState('');
 
 	const handleSubmit = (e: React.FormEvent) => {
 		e.preventDefault();
@@ -60,8 +65,41 @@ export default function Register() {
 		setConfirmPasswordError(confirmPasswordErr);
 
 		if (!fullNameErr && !emailErr && !passwordErr && !confirmPasswordErr) {
-			// Qui puoi aggiungere la logica di registrazione
-			console.log('Registration attempt:', { fullName, email, password });
+			// Invia i dati al backend per la registrazione
+			try {
+				setIsLoading(true);
+				setRegistrationError('');
+
+				const userData = {
+					fullName: fullName.trim(),
+					email: email.trim(),
+					password: password
+				};
+
+				// Nota: Adatta l'URL del backend secondo le tue esigenze
+				// Nel codice originale era 'F1/Users/loginUser', per registrazione userò 'registerUser'
+				axios.post(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001' + '/F1/Users/registerUser', {
+					jsonData: JSON.stringify(userData)
+				}).then(response => {
+					setIsLoading(false);
+					if (!response.data) {
+						setRegistrationError('Errore durante la registrazione');
+						return;
+					}
+
+					// Sucesso - salva token e reindirizza
+					localStorage.setItem('token', response.data);
+					router.push('/home');
+				}).catch(error => {
+					setIsLoading(false);
+					setRegistrationError('Errore di connessione o email già esistente');
+					console.error(error);
+				});
+			} catch (error) {
+				setIsLoading(false);
+				setRegistrationError('Errore imprevisto');
+				console.error(error);
+			}
 		}
 	};
 
@@ -101,6 +139,15 @@ export default function Register() {
 		}
 	}, [confirmPasswordError]);
 
+	useEffect(() => {
+		if (registrationError) {
+			const timer = setTimeout(() => {
+				setRegistrationError('');
+			}, 2500);
+			return () => clearTimeout(timer);
+		}
+	}, [registrationError]);
+
 	return (
 		<div className="flex min-h-screen flex-col items-center justify-center bg-zinc-50 font-sans dark:bg-black">
 			<div className="text-center mb-8">
@@ -117,6 +164,12 @@ export default function Register() {
 						Crea il tuo account per iniziare
 					</p>
 				</div>
+
+				{registrationError && (
+					<div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+						<p className="text-sm text-red-600 dark:text-red-400">{registrationError}</p>
+					</div>
+				)}
 
 				<form className="space-y-6" onSubmit={handleSubmit} noValidate>
 					<div>
@@ -248,9 +301,20 @@ export default function Register() {
 
 					<button
 						type="submit"
-						className="w-full bg-red-600 hover:bg-red-700 text-white font-medium py-3 px-4 rounded-lg transition-colors duration-200 focus:ring-2 focus:ring-red-500 focus:ring-offset-2 hover:cursor-pointer"
+						disabled={isLoading}
+						className="w-full bg-red-600 hover:bg-red-700 disabled:bg-red-400 disabled:cursor-not-allowed text-white font-medium py-3 px-4 rounded-lg transition-colors duration-200 focus:ring-2 focus:ring-red-500 focus:ring-offset-2 hover:cursor-pointer flex items-center justify-center"
 					>
-						Registrati
+						{isLoading ? (
+							<>
+								<svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+									<circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+									<path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+								</svg>
+								Registrazione in corso...
+							</>
+						) : (
+							'Registrati'
+						)}
 					</button>
 				</form>
 
