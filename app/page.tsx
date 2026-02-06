@@ -11,7 +11,7 @@ export default function Login() {
 	const [passwordError, setPasswordError] = useState('');
 
 
-	const handleSubmit = (e: React.FormEvent) => {
+	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
 
 		let emailErr: string = '';
@@ -35,8 +35,30 @@ export default function Login() {
 		setPasswordError(passwordErr);
 
 		if (!emailErr && !passwordErr) {
-			// Qui puoi aggiungere la logica di autenticazione
+			try {
+				const response = await fetch('http://127.0.0.1:8000/api/F1/Users/loginUser', {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+					},
+					body: JSON.stringify({
+						jsonData: JSON.stringify({
+							email,
+							password,
+						})
+					})
+				});
 
+				if (response.ok) {
+					const data = await response.json();
+					console.log('Login riuscito:', data);
+					// Qui puoi salvare il token e reindirizzare l'utente
+				} else {
+					console.error('Errore nel login:', response.statusText);
+				}
+			} catch (error) {
+				console.error('Errore nella richiesta:', error);
+			}
 		}
 	};
 
