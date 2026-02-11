@@ -1,18 +1,22 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { Eye, EyeOff } from 'lucide-react';
 
 export default function Login() {
+	const router = useRouter();
 	const [showPassword, setShowPassword] = useState(false);
 	const [email, setEmail] = useState('');
 	const [password, setPassword] = useState('');
 	const [emailError, setEmailError] = useState('');
 	const [passwordError, setPasswordError] = useState('');
+	const [serverError, setServerError] = useState('');
 
 
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
+		setServerError('');
 
 		let emailErr: string = '';
 		if (!email) {
@@ -49,15 +53,22 @@ export default function Login() {
 					})
 				});
 
-				if (response.ok) {
-					const data = await response.json();
-					console.log('Login riuscito:', data);
-					// Qui puoi salvare il token e reindirizzare l'utente
+				const data = await response.json();
+
+				if (data?.status === 'success' && data?.token) {
+					localStorage.setItem('auth_token', data.token);
+					router.push('/dashboard');
+					return;
+				}
+
+				if (data?.message) {
+					setServerError(data.message);
 				} else {
-					console.error('Errore nel login:', response.statusText);
+					setServerError('Login non riuscito. Riprova.');
 				}
 			} catch (error) {
 				console.error('Errore nella richiesta:', error);
+				setServerError('Errore di rete. Riprova.');
 			}
 		}
 	};
@@ -97,6 +108,11 @@ export default function Login() {
 				</div>
 
 				<form className="space-y-6" onSubmit={handleSubmit} noValidate>
+					{serverError && (
+						<p className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300">
+							{serverError}
+						</p>
+					)}
 					<div>
 						<label htmlFor="email" className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
 							Email
@@ -109,6 +125,7 @@ export default function Login() {
 							onChange={(e) => {
 								setEmail(e.target.value);
 								if (emailError) setEmailError(''); // Pulisce l'errore quando l'utente inizia a digitare
+								if (serverError) setServerError('');
 							}}
 							className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-red-400 focus:border-transparent bg-white dark:bg-zinc-800 text-black dark:text-zinc-50 placeholder-zinc-500 dark:placeholder-zinc-400 ${emailError ? 'border-red-500' : 'border-zinc-300 dark:border-zinc-600'
 								}`}
@@ -128,11 +145,12 @@ export default function Login() {
 								type={showPassword ? "text" : "password"}
 								id="password"
 								name="password"
-								value={password}
-								onChange={(e) => {
-									setPassword(e.target.value);
-									if (passwordError) setPasswordError(''); // Pulisce l'errore quando l'utente inizia a digitare
-								}}
+							value={password}
+							onChange={(e) => {
+								setPassword(e.target.value);
+								if (passwordError) setPasswordError(''); // Pulisce l'errore quando l'utente inizia a digitare
+								if (serverError) setServerError('');
+							}}
 								className={`w-full px-4 py-3 pr-12 border rounded-lg focus:ring-2 focus:ring-red-400 focus:border-transparent bg-white dark:bg-zinc-800 text-black dark:text-zinc-50 placeholder-zinc-500 dark:placeholder-zinc-400 ${passwordError ? 'border-red-500' : 'border-zinc-300 dark:border-zinc-600'
 									}`}
 								placeholder="••••••••"
