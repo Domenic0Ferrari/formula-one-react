@@ -55,8 +55,10 @@ export default function CreateLeaguePage() {
 				},
 				body: JSON.stringify({
 					token,
-					name: name.trim(),
-					description: description.trim(),
+					jsonData: JSON.stringify({
+						name: name.trim(),
+						description: description.trim(),
+					}),
 				}),
 			});
 

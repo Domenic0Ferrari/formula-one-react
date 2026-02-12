@@ -6,9 +6,11 @@ import { useRouter } from 'next/navigation';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://127.0.0.1:8000/api';
 
-const LEAGUE_ROUTE_PREFIX = '/league';
+const LEAGUE_DETAIL_PATH = '/league/detail';
 const LEAGUE_CREATE_PATH = '/league/create';
 const LEAGUE_JOIN_PATH = '/league/join';
+const LAST_LEAGUE_ID_KEY = 'lastLeagueId';
+const SELECTED_LEAGUE_ID_KEY = 'selectedLeagueId';
 
 type LeagueSummary = {
 	id: string;
@@ -18,6 +20,7 @@ type LeagueSummary = {
 function normalizeLeagues(payload: unknown): LeagueSummary[] {
 	const data = payload as Record<string, unknown> | null;
 	const candidates = [
+		Array.isArray(payload) ? payload : null,
 		Array.isArray(data?.leagues) ? data?.leagues : null,
 		Array.isArray(data?.data) ? data?.data : null,
 		Array.isArray((data?.data as Record<string, unknown> | null)?.leagues)
@@ -30,8 +33,14 @@ function normalizeLeagues(payload: unknown): LeagueSummary[] {
 
 	return raw.map((item, index) => {
 		const league = item as Record<string, unknown> | null;
-		const id = league?.id ?? league?.leagueId ?? league?.idLega ?? index;
+		const id =
+			league?.league_id ??
+			league?.id ??
+			league?.leagueId ??
+			league?.idLega ??
+			index;
 		const name =
+			(league?.league_name as string | undefined) ??
 			(league?.name as string | undefined) ??
 			(league?.nome as string | undefined) ??
 			`Lega ${index + 1}`;
@@ -47,8 +56,12 @@ export default function Dashboard() {
 	const [isLoading, setIsLoading] = useState(true);
 	const [error, setError] = useState('');
 	const [leagues, setLeagues] = useState<LeagueSummary[]>([]);
+	const [lastLeagueId, setLastLeagueId] = useState<string | null>(null);
 
 	useEffect(() => {
+		const storedLastLeagueId = localStorage.getItem(LAST_LEAGUE_ID_KEY);
+		setLastLeagueId(storedLastLeagueId);
+
 		let isMounted = true;
 
 		const loadLeagues = async () => {
@@ -92,11 +105,29 @@ export default function Dashboard() {
 		};
 	}, [router]);
 
+	const openLeague = (leagueId: string) => {
+		localStorage.setItem(LAST_LEAGUE_ID_KEY, leagueId);
+		localStorage.setItem(SELECTED_LEAGUE_ID_KEY, leagueId);
+		router.push(LEAGUE_DETAIL_PATH);
+	};
+
 	useEffect(() => {
 		if (leagues.length === 1) {
-			router.replace(`${LEAGUE_ROUTE_PREFIX}/${leagues[0].id}`);
+			const leagueId = leagues[0].id;
+			localStorage.setItem(LAST_LEAGUE_ID_KEY, leagueId);
+			localStorage.setItem(SELECTED_LEAGUE_ID_KEY, leagueId);
+			router.replace(LEAGUE_DETAIL_PATH);
 		}
 	}, [leagues, router]);
+
+	const sortedLeagues =
+		leagues.length > 1 && lastLeagueId
+			? [...leagues].sort((a, b) => {
+					if (a.id === lastLeagueId) return -1;
+					if (b.id === lastLeagueId) return 1;
+					return 0;
+				})
+			: leagues;
 
 	return (
 		<div className="min-h-screen bg-zinc-50 dark:bg-black text-zinc-900 dark:text-zinc-50">
@@ -126,7 +157,7 @@ export default function Dashboard() {
 
 				{!isLoading && !error && leagues.length > 1 && (
 					<div className="grid gap-6 md:grid-cols-2">
-						{leagues.map((league) => (
+						{sortedLeagues.map((league) => (
 							<div
 								key={league.id}
 								className="flex flex-col justify-between rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900"
@@ -138,9 +169,14 @@ export default function Dashboard() {
 									<h2 className="mt-2 text-2xl font-semibold">
 										{league.name}
 									</h2>
+									{league.id === lastLeagueId && (
+										<p className="mt-2 inline-flex rounded-full bg-red-100 px-3 py-1 text-xs font-medium text-red-700 dark:bg-red-950/50 dark:text-red-300">
+											Ultima aperta
+										</p>
+									)}
 								</div>
 								<button
-									onClick={() => router.push(`${LEAGUE_ROUTE_PREFIX}/${league.id}`)}
+									onClick={() => openLeague(league.id)}
 									className="mt-6 inline-flex items-center justify-center rounded-full bg-red-600 px-5 py-2 text-sm font-semibold text-white transition hover:bg-red-700"
 								>
 									Entra nella lega
