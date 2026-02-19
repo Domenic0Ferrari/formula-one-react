@@ -1,6 +1,7 @@
 'use client';
 
-import { Flag, Gauge, Settings, ShieldCheck } from 'lucide-react';
+import { Flag, Gauge, Settings, ShieldCheck, Users } from 'lucide-react';
+import { usePathname, useRouter } from 'next/navigation';
 import {
 	Sidebar,
 	SidebarContent,
@@ -21,6 +22,8 @@ type AppSidebarProps = {
 
 export function AppSidebar({ leagueName, isSuperUser }: AppSidebarProps) {
 	const { isDesktop, isCollapsed } = useSidebar();
+	const router = useRouter();
+	const pathname = usePathname();
 	const showLabels = !isDesktop || !isCollapsed;
 
 	return (
@@ -41,9 +44,21 @@ export function AppSidebar({ leagueName, isSuperUser }: AppSidebarProps) {
 					{showLabels && <SidebarGroupLabel>Navigazione</SidebarGroupLabel>}
 					<SidebarMenu>
 						<SidebarMenuItem>
-							<SidebarMenuButton isActive>
+							<SidebarMenuButton
+								onClick={() => router.push('/league/detail')}
+								isActive={pathname === '/league/detail'}
+							>
 								<Gauge className="h-4 w-4" />
-								{showLabels && <span>Panoramica</span>}
+								{showLabels && <span>La mia squadra</span>}
+							</SidebarMenuButton>
+						</SidebarMenuItem>
+						<SidebarMenuItem>
+							<SidebarMenuButton
+								onClick={() => router.push('/league/drivers')}
+								isActive={pathname === '/league/drivers'}
+							>
+								<Users className="h-4 w-4" />
+								{showLabels && <span>Piloti</span>}
 							</SidebarMenuButton>
 						</SidebarMenuItem>
 						<SidebarMenuItem>

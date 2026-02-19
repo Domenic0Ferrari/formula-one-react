@@ -20,10 +20,7 @@ const SELECTED_LEAGUE_ID_KEY = 'selectedLeagueId';
 type LeagueDetail = {
 	id: string;
 	name: string;
-	description: string;
 	isSuperUser: boolean;
-	createdAt: number | null;
-	updatedAt: number | null;
 };
 
 type Driver = {
@@ -37,9 +34,11 @@ const FALLBACK_DRIVERS: Driver[] = [
 	{ id: '44', name: 'Lewis Hamilton', team: 'Ferrari', number: '44' },
 	{ id: '16', name: 'Charles Leclerc', team: 'Ferrari', number: '16' },
 	{ id: '1', name: 'Max Verstappen', team: 'Red Bull', number: '1' },
+	{ id: '11', name: 'Sergio Perez', team: 'Red Bull', number: '11' },
 	{ id: '4', name: 'Lando Norris', team: 'McLaren', number: '4' },
+	{ id: '81', name: 'Oscar Piastri', team: 'McLaren', number: '81' },
 	{ id: '63', name: 'George Russell', team: 'Mercedes', number: '63' },
-	{ id: '14', name: 'Fernando Alonso', team: 'Aston Martin', number: '14' },
+	{ id: '12', name: 'Kimi Antonelli', team: 'Mercedes', number: '12' },
 ];
 
 function normalizeLeagueDetail(payload: unknown): LeagueDetail | null {
@@ -57,13 +56,6 @@ function normalizeLeagueDetail(payload: unknown): LeagueDetail | null {
 	const id = source.league_id ?? source.id ?? source.leagueId ?? source.idLega;
 	if (id === undefined || id === null) return null;
 
-	const createdAtRaw = source.created_at ?? source.createdAt;
-	const updatedAtRaw = source.updated_at ?? source.updatedAt;
-	const createdAt =
-		typeof createdAtRaw === 'number' ? createdAtRaw : createdAtRaw ? Number(createdAtRaw) : null;
-	const updatedAt =
-		typeof updatedAtRaw === 'number' ? updatedAtRaw : updatedAtRaw ? Number(updatedAtRaw) : null;
-
 	return {
 		id: String(id),
 		name:
@@ -71,22 +63,8 @@ function normalizeLeagueDetail(payload: unknown): LeagueDetail | null {
 			(source.name as string | undefined) ??
 			(source.nome as string | undefined) ??
 			'Lega',
-		description:
-			(source.league_description as string | undefined) ??
-			(source.description as string | undefined) ??
-			(source.descrizione as string | undefined) ??
-			'Nessuna descrizione disponibile.',
 		isSuperUser: Number(source.super_user ?? source.is_super_user ?? 0) === 1,
-		createdAt: Number.isNaN(createdAt) ? null : createdAt,
-		updatedAt: Number.isNaN(updatedAt) ? null : updatedAt,
 	};
-}
-
-function formatUnixTimestamp(timestamp: number | null): string {
-	if (!timestamp) return '-';
-	const date = new Date(timestamp * 1000);
-	if (Number.isNaN(date.getTime())) return '-';
-	return date.toLocaleString('it-IT');
 }
 
 function normalizeDrivers(payload: unknown): Driver[] {
@@ -120,12 +98,14 @@ function normalizeDrivers(payload: unknown): Driver[] {
 				(driver?.team as string | undefined) ??
 				(driver?.scuderia as string | undefined) ??
 				'N/D',
-			number: String(driver?.driver_number ?? driver?.number ?? driver?.numero ?? id),
+			number: String(
+				driver?.driver_number ?? driver?.number ?? driver?.numero ?? driver?.id ?? ''
+			),
 		};
 	});
 }
 
-export default function LeagueDetailPage() {
+export default function LeagueDriversPage() {
 	const router = useRouter();
 	const [isLoading, setIsLoading] = useState(true);
 	const [error, setError] = useState('');
@@ -136,7 +116,7 @@ export default function LeagueDetailPage() {
 	useEffect(() => {
 		let isMounted = true;
 
-		const loadLeagueDetail = async () => {
+		const loadPageData = async () => {
 			setIsLoading(true);
 			setError('');
 
@@ -156,21 +136,15 @@ export default function LeagueDetailPage() {
 				const [leagueResponse, driversResponse] = await Promise.all([
 					fetch(`${API_BASE}/F1/League/getActiveLeagueDetails`, {
 						method: 'POST',
-						headers: {
-							'Content-Type': 'application/json',
-						},
+						headers: { 'Content-Type': 'application/json' },
 						body: JSON.stringify({
 							token,
-							jsonData: JSON.stringify({
-								league_id: selectedLeagueId,
-							}),
+							jsonData: JSON.stringify({ league_id: selectedLeagueId }),
 						}),
 					}),
 					fetch(`${API_BASE}/F1/Drivers/getAllDrivers`, {
 						method: 'POST',
-						headers: {
-							'Content-Type': 'application/json',
-						},
+						headers: { 'Content-Type': 'application/json' },
 						body: JSON.stringify({ token }),
 					}),
 				]);
@@ -180,27 +154,28 @@ export default function LeagueDetailPage() {
 					driversResponse.json(),
 				]);
 
+				if (!isMounted) return;
+
 				if (!leagueResponse.ok || leagueData?.status === 'error') {
-					if (!isMounted) return;
 					setError(leagueData?.message || 'Non riesco a caricare i dettagli della lega.');
 					return;
 				}
 
-				const normalized = normalizeLeagueDetail(leagueData);
-				if (!isMounted) return;
-
-				if (!normalized) {
+				const normalizedLeague = normalizeLeagueDetail(leagueData);
+				if (!normalizedLeague) {
 					setError('Dettagli lega non validi.');
 					return;
 				}
+				setLeague(normalizedLeague);
 
-				setLeague(normalized);
-				const normalizedDrivers = driversResponse.ok ? normalizeDrivers(driversData) : [];
+				const normalizedDrivers = driversResponse.ok
+					? normalizeDrivers(driversData)
+					: [];
 				setDrivers(normalizedDrivers.length > 0 ? normalizedDrivers : FALLBACK_DRIVERS);
 			} catch (err) {
 				if (!isMounted) return;
-				console.error('Errore durante il caricamento dettagli lega:', err);
-				setError('Errore di rete. Riprova.');
+				console.error('Errore durante il caricamento piloti:', err);
+				setLeague((current) => current);
 				setDrivers(FALLBACK_DRIVERS);
 			} finally {
 				if (!isMounted) return;
@@ -208,7 +183,7 @@ export default function LeagueDetailPage() {
 			}
 		};
 
-		void loadLeagueDetail();
+		void loadPageData();
 
 		return () => {
 			isMounted = false;
@@ -251,7 +226,7 @@ export default function LeagueDetailPage() {
 		return (
 			<div className="flex min-h-screen items-center justify-center bg-zinc-50 px-6 py-16 text-zinc-900 dark:bg-black dark:text-zinc-50">
 				<div className="rounded-lg border border-zinc-200 bg-white px-6 py-4 text-sm text-zinc-600 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300">
-					Sto caricando i dettagli della lega...
+					Sto caricando i piloti...
 				</div>
 			</div>
 		);
@@ -273,10 +248,10 @@ export default function LeagueDetailPage() {
 
 			<SidebarInset>
 				<div className="min-h-screen bg-zinc-50 px-6 py-8 text-zinc-900 dark:bg-black dark:text-zinc-50">
-					<div className="mx-auto w-full max-w-4xl">
+					<div className="mx-auto w-full max-w-5xl">
 						<div className="mb-6 flex items-center gap-3">
 							<SidebarTrigger />
-							<p className="text-sm text-zinc-500 dark:text-zinc-400">Area lega</p>
+							<p className="text-sm text-zinc-500 dark:text-zinc-400">Gestione piloti</p>
 						</div>
 
 						{error && (
@@ -285,25 +260,14 @@ export default function LeagueDetailPage() {
 							</div>
 						)}
 
-						<div className="rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-							<h1 className="text-3xl font-semibold">{league.name}</h1>
-							<p className="mt-3 text-zinc-600 dark:text-zinc-400">{league.description}</p>
-							<div className="mt-4 space-y-1 text-sm text-zinc-500 dark:text-zinc-400">
-								<p>ID lega: {league.id}</p>
-								<p>Ruolo: {league.isSuperUser ? 'Super utente' : 'Partecipante'}</p>
-								<p>Creata il: {formatUnixTimestamp(league.createdAt)}</p>
-								<p>Ultima modifica: {formatUnixTimestamp(league.updatedAt)}</p>
-							</div>
-						</div>
-
-						<div className="mt-6 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+						<div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
 							<div className="mb-4 flex flex-wrap items-end justify-between gap-3">
 								<div>
-									<h2 className="text-2xl font-semibold">La mia squadra</h2>
+									<h1 className="text-2xl font-semibold">Piloti disponibili</h1>
 									<p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
 										{league.isSuperUser
-											? 'Seleziona i piloti da includere nella squadra.'
-											: 'Solo il super utente puo selezionare i piloti.'}
+											? 'Seleziona i piloti da assegnare alla tua squadra.'
+											: 'Solo il super utente puo modificare le selezioni dei piloti.'}
 									</p>
 								</div>
 								<p className="rounded-full bg-red-100 px-3 py-1 text-xs font-medium text-red-700 dark:bg-red-950/50 dark:text-red-300">
@@ -312,13 +276,13 @@ export default function LeagueDetailPage() {
 							</div>
 
 							<Table>
-								<TableCaption>Elenco piloti disponibili</TableCaption>
+								<TableCaption>Elenco piloti Formula 1</TableCaption>
 								<TableHeader>
 									<TableRow>
-										<TableHead className="w-[70px]">#</TableHead>
+										<TableHead className="w-[60px]">#</TableHead>
 										<TableHead>Pilota</TableHead>
 										<TableHead>Team</TableHead>
-										<TableHead className="text-right">Selezione</TableHead>
+										<TableHead className="text-right">Seleziona</TableHead>
 									</TableRow>
 								</TableHeader>
 								<TableBody>
