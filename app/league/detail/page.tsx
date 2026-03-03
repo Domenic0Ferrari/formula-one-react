@@ -1,18 +1,9 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { AppSidebar } from '@/components/app-sidebar';
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
-import {
-	Table,
-	TableBody,
-	TableCaption,
-	TableCell,
-	TableHead,
-	TableHeader,
-	TableRow,
-} from '@/components/ui/table';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://127.0.0.1:8000/api';
 const SELECTED_LEAGUE_ID_KEY = 'selectedLeagueId';
@@ -22,25 +13,18 @@ type LeagueDetail = {
 	name: string;
 	description: string;
 	isSuperUser: boolean;
+	seasonId: string | null;
 	createdAt: number | null;
 	updatedAt: number | null;
 };
 
-type Driver = {
+type NextRace = {
 	id: string;
 	name: string;
-	team: string;
-	number: string;
+	circuit: string;
+	dateLabel: string;
+	isSprintRace: boolean;
 };
-
-const FALLBACK_DRIVERS: Driver[] = [
-	{ id: '44', name: 'Lewis Hamilton', team: 'Ferrari', number: '44' },
-	{ id: '16', name: 'Charles Leclerc', team: 'Ferrari', number: '16' },
-	{ id: '1', name: 'Max Verstappen', team: 'Red Bull', number: '1' },
-	{ id: '4', name: 'Lando Norris', team: 'McLaren', number: '4' },
-	{ id: '63', name: 'George Russell', team: 'Mercedes', number: '63' },
-	{ id: '14', name: 'Fernando Alonso', team: 'Aston Martin', number: '14' },
-];
 
 function normalizeLeagueDetail(payload: unknown): LeagueDetail | null {
 	const data = payload as Record<string, unknown> | null;
@@ -63,6 +47,7 @@ function normalizeLeagueDetail(payload: unknown): LeagueDetail | null {
 		typeof createdAtRaw === 'number' ? createdAtRaw : createdAtRaw ? Number(createdAtRaw) : null;
 	const updatedAt =
 		typeof updatedAtRaw === 'number' ? updatedAtRaw : updatedAtRaw ? Number(updatedAtRaw) : null;
+	const seasonIdRaw = source.season_id ?? source.seasonId ?? source.id_stagione ?? null;
 
 	return {
 		id: String(id),
@@ -77,6 +62,7 @@ function normalizeLeagueDetail(payload: unknown): LeagueDetail | null {
 			(source.descrizione as string | undefined) ??
 			'Nessuna descrizione disponibile.',
 		isSuperUser: Number(source.super_user ?? source.is_super_user ?? 0) === 1,
+		seasonId: seasonIdRaw === undefined || seasonIdRaw === null ? null : String(seasonIdRaw),
 		createdAt: Number.isNaN(createdAt) ? null : createdAt,
 		updatedAt: Number.isNaN(updatedAt) ? null : updatedAt,
 	};
@@ -89,40 +75,129 @@ function formatUnixTimestamp(timestamp: number | null): string {
 	return date.toLocaleString('it-IT');
 }
 
-function normalizeDrivers(payload: unknown): Driver[] {
+function parseRaceDate(value: unknown): Date | null {
+	if (value === undefined || value === null) return null;
+
+	if (typeof value === 'number' && Number.isFinite(value)) {
+		const millis = value > 1e12 ? value : value * 1000;
+		const date = new Date(millis);
+		return Number.isNaN(date.getTime()) ? null : date;
+	}
+
+	if (typeof value === 'string') {
+		const asNumber = Number(value);
+		if (!Number.isNaN(asNumber)) {
+			const millis = asNumber > 1e12 ? asNumber : asNumber * 1000;
+			const numericDate = new Date(millis);
+			if (!Number.isNaN(numericDate.getTime())) return numericDate;
+		}
+
+		const isoDate = new Date(value);
+		if (!Number.isNaN(isoDate.getTime())) return isoDate;
+	}
+
+	return null;
+}
+
+function toBooleanFlag(value: unknown): boolean {
+	if (typeof value === 'boolean') return value;
+	if (typeof value === 'number') return value === 1;
+	if (typeof value === 'string') return value === '1' || value.toLowerCase() === 'true';
+	return false;
+}
+
+function normalizeRaceCandidates(payload: unknown): Record<string, unknown>[] {
 	const data = payload as Record<string, unknown> | null;
 	const candidates = [
 		Array.isArray(payload) ? payload : null,
-		Array.isArray(data?.drivers) ? data?.drivers : null,
+		Array.isArray(data?.races) ? data?.races : null,
 		Array.isArray(data?.data) ? data?.data : null,
-		Array.isArray((data?.data as Record<string, unknown> | null)?.drivers)
-			? (data?.data as Record<string, unknown>).drivers
+		Array.isArray((data?.data as Record<string, unknown> | null)?.races)
+			? (data?.data as Record<string, unknown>).races
 			: null,
 	];
 
 	const raw = candidates.find(Boolean) as unknown[] | undefined;
 	if (!raw) return [];
 
-	return raw.map((item, index) => {
-		const driver = item as Record<string, unknown> | null;
-		const id =
-			driver?.driver_id ?? driver?.id ?? driver?.driverId ?? driver?.numero ?? driver?.number ?? index;
+	return raw.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'));
+}
 
-		return {
-			id: String(id),
-			name:
-				(driver?.driver_name as string | undefined) ??
-				(driver?.name as string | undefined) ??
-				(driver?.nome as string | undefined) ??
-				`Pilota ${index + 1}`,
-			team:
-				(driver?.team_name as string | undefined) ??
-				(driver?.team as string | undefined) ??
-				(driver?.scuderia as string | undefined) ??
-				'N/D',
-			number: String(driver?.driver_number ?? driver?.number ?? driver?.numero ?? id),
-		};
-	});
+function pickNextRace(payload: unknown): NextRace | null {
+	const races = normalizeRaceCandidates(payload)
+		.map((race, index) => {
+			const date = parseRaceDate(
+				race.race_date ?? race.raceDate ?? race.date ?? race.start_date ?? race.startDate ?? race.timestamp
+			);
+			return {
+				index,
+				race,
+				date,
+			};
+		})
+		.filter((item) => item.date !== null)
+		.sort((a, b) => a.date!.getTime() - b.date!.getTime());
+
+	const now = Date.now();
+	const next = races.find((item) => item.date!.getTime() >= now) ?? races[0];
+	if (!next) return null;
+
+	const raceId =
+		next.race.race_id ?? next.race.id ?? next.race.raceId ?? next.race.round ?? next.index + 1;
+	const raceName =
+		(next.race.race_name as string | undefined) ??
+		(next.race.name as string | undefined) ??
+		(next.race.grand_prix as string | undefined) ??
+		`Gara ${next.index + 1}`;
+	const circuit =
+		(next.race.circuit_name as string | undefined) ??
+		(next.race.circuit as string | undefined) ??
+		(next.race.track_name as string | undefined) ??
+		'N/D';
+
+	return {
+		id: String(raceId),
+		name: raceName,
+		circuit,
+		dateLabel: next.date!.toLocaleString('it-IT'),
+		isSprintRace: toBooleanFlag(next.race.sprint_race ?? next.race.sprintRace),
+	};
+}
+
+async function fetchNextRace(token: string, seasonId: string): Promise<NextRace | null> {
+	const endpoints = [
+		'/F1/Races/getRacesBySeason',
+		'/F1/Races/getSeasonRaces',
+		'/F1/Race/getRacesBySeason',
+		'/F1/Races/getAllRaces',
+		'/F1/Race/getAllRaces',
+	];
+
+	for (const endpoint of endpoints) {
+		try {
+			const response = await fetch(`${API_BASE}${endpoint}`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					token,
+					season_id: seasonId,
+					jsonData: JSON.stringify({ season_id: seasonId }),
+				}),
+			});
+
+			if (!response.ok) continue;
+
+			const data = await response.json();
+			if (data?.status === 'error') continue;
+
+			const nextRace = pickNextRace(data);
+			if (nextRace) return nextRace;
+		} catch {
+			continue;
+		}
+	}
+
+	return null;
 }
 
 export default function LeagueDetailPage() {
@@ -130,8 +205,7 @@ export default function LeagueDetailPage() {
 	const [isLoading, setIsLoading] = useState(true);
 	const [error, setError] = useState('');
 	const [league, setLeague] = useState<LeagueDetail | null>(null);
-	const [drivers, setDrivers] = useState<Driver[]>([]);
-	const [selectedDriverIds, setSelectedDriverIds] = useState<string[]>([]);
+	const [nextRace, setNextRace] = useState<NextRace | null>(null);
 
 	useEffect(() => {
 		let isMounted = true;
@@ -153,32 +227,20 @@ export default function LeagueDetailPage() {
 			}
 
 			try {
-				const [leagueResponse, driversResponse] = await Promise.all([
-					fetch(`${API_BASE}/F1/League/getActiveLeagueDetails`, {
-						method: 'POST',
-						headers: {
-							'Content-Type': 'application/json',
-						},
-						body: JSON.stringify({
-							token,
-							jsonData: JSON.stringify({
-								league_id: selectedLeagueId,
-							}),
+				const leagueResponse = await fetch(`${API_BASE}/F1/League/getActiveLeagueDetails`, {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+					},
+					body: JSON.stringify({
+						token,
+						jsonData: JSON.stringify({
+							league_id: selectedLeagueId,
 						}),
 					}),
-					fetch(`${API_BASE}/F1/Drivers/getAllDrivers`, {
-						method: 'POST',
-						headers: {
-							'Content-Type': 'application/json',
-						},
-						body: JSON.stringify({ token }),
-					}),
-				]);
+				});
 
-				const [leagueData, driversData] = await Promise.all([
-					leagueResponse.json(),
-					driversResponse.json(),
-				]);
+				const leagueData = await leagueResponse.json();
 
 				if (!leagueResponse.ok || leagueData?.status === 'error') {
 					if (!isMounted) return;
@@ -195,13 +257,20 @@ export default function LeagueDetailPage() {
 				}
 
 				setLeague(normalized);
-				const normalizedDrivers = driversResponse.ok ? normalizeDrivers(driversData) : [];
-				setDrivers(normalizedDrivers.length > 0 ? normalizedDrivers : FALLBACK_DRIVERS);
+
+				if (!normalized.seasonId) {
+					setNextRace(null);
+					setError('Season ID non presente nei dettagli lega.');
+					return;
+				}
+
+				const race = await fetchNextRace(token, normalized.seasonId);
+				if (!isMounted) return;
+				setNextRace(race);
 			} catch (err) {
 				if (!isMounted) return;
 				console.error('Errore durante il caricamento dettagli lega:', err);
 				setError('Errore di rete. Riprova.');
-				setDrivers(FALLBACK_DRIVERS);
 			} finally {
 				if (!isMounted) return;
 				setIsLoading(false);
@@ -214,38 +283,6 @@ export default function LeagueDetailPage() {
 			isMounted = false;
 		};
 	}, [router]);
-
-	useEffect(() => {
-		if (!league) return;
-
-		const storageKey = `selectedDrivers:${league.id}`;
-		const stored = localStorage.getItem(storageKey);
-		if (!stored) return;
-
-		try {
-			const parsed = JSON.parse(stored);
-			if (Array.isArray(parsed)) {
-				setSelectedDriverIds(parsed.map((id) => String(id)));
-			}
-		} catch {
-			setSelectedDriverIds([]);
-		}
-	}, [league]);
-
-	const selectedCount = useMemo(() => selectedDriverIds.length, [selectedDriverIds]);
-
-	const toggleDriver = (driverId: string) => {
-		if (!league?.isSuperUser) return;
-
-		setSelectedDriverIds((current) => {
-			const next = current.includes(driverId)
-				? current.filter((id) => id !== driverId)
-				: [...current, driverId];
-
-			localStorage.setItem(`selectedDrivers:${league.id}`, JSON.stringify(next));
-			return next;
-		});
-	};
 
 	if (isLoading) {
 		return (
@@ -291,58 +328,26 @@ export default function LeagueDetailPage() {
 							<div className="mt-4 space-y-1 text-sm text-zinc-500 dark:text-zinc-400">
 								<p>ID lega: {league.id}</p>
 								<p>Ruolo: {league.isSuperUser ? 'Super utente' : 'Partecipante'}</p>
+								<p>Season ID: {league.seasonId ?? '-'}</p>
 								<p>Creata il: {formatUnixTimestamp(league.createdAt)}</p>
 								<p>Ultima modifica: {formatUnixTimestamp(league.updatedAt)}</p>
 							</div>
 						</div>
 
 						<div className="mt-6 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-							<div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-								<div>
-									<h2 className="text-2xl font-semibold">La mia squadra</h2>
-									<p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-										{league.isSuperUser
-											? 'Seleziona i piloti da includere nella squadra.'
-											: 'Solo il super utente puo selezionare i piloti.'}
-									</p>
+							<h2 className="text-2xl font-semibold">Prossima gara</h2>
+							{nextRace ? (
+								<div className="mt-3 space-y-1 text-sm text-zinc-600 dark:text-zinc-300">
+									<p className="text-base font-medium text-zinc-900 dark:text-zinc-50">{nextRace.name}</p>
+									<p>Circuito: {nextRace.circuit}</p>
+									<p>Data: {nextRace.dateLabel}</p>
+									<p>Sprint race: {nextRace.isSprintRace ? 'Si' : 'No'}</p>
 								</div>
-								<p className="rounded-full bg-red-100 px-3 py-1 text-xs font-medium text-red-700 dark:bg-red-950/50 dark:text-red-300">
-									Selezionati: {selectedCount}
+							) : (
+								<p className="mt-3 text-sm text-zinc-600 dark:text-zinc-400">
+									Nessuna prossima gara trovata per questa stagione.
 								</p>
-							</div>
-
-							<Table>
-								<TableCaption>Elenco piloti disponibili</TableCaption>
-								<TableHeader>
-									<TableRow>
-										<TableHead className="w-[70px]">#</TableHead>
-										<TableHead>Pilota</TableHead>
-										<TableHead>Team</TableHead>
-										<TableHead className="text-right">Selezione</TableHead>
-									</TableRow>
-								</TableHeader>
-								<TableBody>
-									{drivers.map((driver) => {
-										const isChecked = selectedDriverIds.includes(driver.id);
-										return (
-											<TableRow key={driver.id} data-state={isChecked ? 'selected' : undefined}>
-												<TableCell className="font-medium">{driver.number}</TableCell>
-												<TableCell>{driver.name}</TableCell>
-												<TableCell>{driver.team}</TableCell>
-												<TableCell className="text-right">
-													<input
-														type="checkbox"
-														checked={isChecked}
-														disabled={!league.isSuperUser}
-														onChange={() => toggleDriver(driver.id)}
-														className="h-4 w-4 accent-red-600 disabled:cursor-not-allowed"
-													/>
-												</TableCell>
-											</TableRow>
-										);
-									})}
-								</TableBody>
-							</Table>
+							)}
 						</div>
 					</div>
 				</div>
